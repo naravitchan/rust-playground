@@ -10,4 +10,3 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("stream finished");
     Ok(())
 }
-
