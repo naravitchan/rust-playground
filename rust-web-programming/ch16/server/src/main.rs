@@ -1,44 +1,44 @@
 use bincode;
+use bytes::Bytes;
+use futures::sink::SinkExt;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
+use tokio_util::codec::{BytesCodec, Decoder};
+mod http_frame;
+use http_frame::{Body, Header, HttpFrame};
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Message {
-    pub ticker: String,
-    pub amount: f32,
-}
+// #[derive(Serialize, Deserialize, Debug)]
+// struct Message {
+//     pub ticker: String,
+//     pub amount: f32,
+// }
 
 #[tokio::main]
 async fn main() {
     let addr = "127.0.0.1:8080".to_string();
-    let socket = TcpListener::bind(&addr).await.unwrap();
+    let listener = TcpListener::bind(&addr).await.unwrap();
     println!("Listening on: {}", addr);
-    while let Ok((mut stream, peer)) = socket.accept().await {
-        println!("Incoming connection from: {}", peer.to_string());
+    loop {
+        let (socket, _) = listener.accept().await.unwrap();
         tokio::spawn(async move {
-            println!("thread starting {} starting", peer.to_string());
-            let (reader, mut writer) = stream.split();
-            let mut buf_reader = BufReader::new(reader);
-            let mut buf = vec![];
-            loop {
-                match buf_reader.read_until(b'\n', &mut buf).await {
-                    Ok(n) => {
-                        if n == 0 {
-                            println!("EOF received");
-                            break;
-                        }
-                        let message = bincode::deserialize::<Message>(&buf).unwrap();
-                        println!("{:?}", message);
-                        let message_bin = bincode::serialize(&message).unwrap();
-                        writer.write_all(&message_bin).await.unwrap();
-                        writer.write_all(b"\n").await.unwrap();
-                        buf.clear();
-                    }
-                    Err(e) => println!("Error receiving message: {}", e),
+            let mut framed = BytesCodec::new().framed(socket);
+            let message = framed.next().await.unwrap();
+            match message {
+                Ok(bytes) => {
+                    let message = bincode::deserialize::<HttpFrame>(&bytes).unwrap();
+                    println!("{:?}", message);
+                    let message_bin = bincode::serialize(&message).unwrap();
+                    let sending_message = Bytes::from(message_bin);
+                    framed.send(sending_message).await.unwrap();
                 }
+                Err(err) => println!(
+                    "Socket closed with error:
+                                          {:?}",
+                    err
+                ),
             }
-            println!("thread {} finishing", peer.to_string());
+            println!("Socket received FIN packet and closed connection");
         });
     }
 }
