@@ -1,6 +1,5 @@
 use super::messages::{MessageType, StateActorMessage};
 use std::collections::{HashMap, VecDeque};
-use std::mem;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 #[derive(Debug)]
